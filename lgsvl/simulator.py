@@ -11,6 +11,7 @@ from .geometry import Vector, Transform
 from .utils import accepts
 from .controllable import Controllable
 
+
 from collections import namedtuple
 
 RaycastHit = namedtuple("RaycastHit", "distance point normal")
@@ -19,7 +20,7 @@ WeatherState = namedtuple("WeatherState", "rain fog wetness")
 
 
 class Simulator:
-
+  episode_state = None  
   @accepts(str, int)
   def __init__(self, address = "localhost", port = 8181):
     if port <= 0 or port > 65535: raise ValueError("port value is out of range")
@@ -65,6 +66,11 @@ class Simulator:
   def run(self, time_limit = 0.0, time_scale = None):
     self._process("simulator/run", {"time_limit": time_limit, "time_scale": time_scale})
 
+  def run_with_cb(self, time_limit = 0.0, time_scale = None):
+    if(Simulator.episode_state is not None):
+      Simulator.episode_state = None 
+    self._process_with_cb("simulator/run", {"time_limit": time_limit, "time_scale": time_scale})  
+    
   def _add_callback(self, agent, name, fn):
     if agent not in self.callbacks:
       self.callbacks[agent] = {}
@@ -82,7 +88,7 @@ class Simulator:
         if event_type in callbacks:
           for fn in callbacks[event_type]:
             if event_type == "collision":
-              fn(agent, self.agents.get(ev["other"]), Vector.from_json(ev["contact"]) if ev["contact"] is not None else None)
+              fn(agent, self.agents.get(ev["other"]), Vector.from_json(ev["contact"]))
             elif event_type == "waypoint_reached":
               fn(agent, ev["index"])
             elif event_type == "stop_line":
@@ -91,6 +97,8 @@ class Simulator:
               fn(agent)
             elif event_type == "custom":
               fn(agent, ev["kind"], ev["context"])
+            elif event_type == "lane_change_done":
+              fn(agent, ev["finished"])
             if self.stopped:
               return
 
@@ -105,13 +113,27 @@ class Simulator:
           break
       j = self.remote.command("simulator/continue")
 
+  def _process_with_cb(self, cmd, args):
+    j = self.remote.command(cmd, args)
+    while True:
+      if self.remote.episode_status  is not None: 
+          Simulator.episode_state = self.remote.episode_status
+      if j is None:
+        return
+      if "events" in j:
+        self._process_events(j["events"])
+        if self.stopped:
+          break
+      j = self.remote.command("simulator/continue")
+
   @accepts(str, AgentType, AgentState)
   def add_agent(self, name, agent_type, state = None):
     if state is None: state = AgentState()
     args = {"name": name, "type": agent_type.value, "state": state.to_json()}
     uid = self.remote.command("simulator/add_agent", args)
-    agent = Agent.create(self, uid, agent_type)
+    agent = Agent.create(self, uid, agent_type)  
     agent.name = name
+    agent.agent_type=agent_type
     self.agents[uid] = agent
     return agent
 
@@ -145,7 +167,9 @@ class Simulator:
 
   def get_spawn(self):
     spawns = self.remote.command("map/spawn/get")
-    return [Transform.from_json(spawn) for spawn in spawns]
+#    if(spawns is not None and spawns[0] == "spawn"): 
+#      return [Transform.from_json(spawn) for spawn in spawns[1:]]
+    return [Transform.from_json(spawn) for spawn in spawns["spawns_array"] ]
 
   @accepts(Transform)
   def map_to_gps(self, transform):
@@ -205,11 +229,13 @@ class Simulator:
   @accepts(Vector)
   def map_point_on_lane(self, point):
     j = self.remote.command("map/point_on_lane", {"point": point.to_json()})
+    if j is None:
+      return Transform() 
     return Transform.from_json(j)
 
   @accepts(Vector, Vector, int, float)
   def raycast(self, origin, direction, layer_mask = -1, max_distance = float("inf")):
-    hit = self.remote.command("simulator/raycast", [{
+    hit = self.remote.command("simulator/raycast", {
       "origin": origin.to_json(),
       "direction": direction.to_json(),
       "layer_mask": layer_mask,

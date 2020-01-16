@@ -15,12 +15,15 @@ class Remote(threading.Thread):
     super().__init__(daemon=True)
     self.endpoint = "ws://{}:{}".format(host, port)
     self.lock = threading.Lock()
-    self.cv = threading.Condition()
+    self.episode_cv = threading.Condition()
+    self.cv = threading.Condition() 
     self.data = None
     self.sem = threading.Semaphore(0)
     self.running = True
     self.start()
     self.sem.acquire()
+    self.cv_released_already = False 
+    self.episode_status = {} 
 
   def run(self):
     self.loop = asyncio.new_event_loop()                
@@ -45,24 +48,57 @@ class Remote(threading.Thread):
         with self.cv:
           self.data = {"error": str(e)}
           self.cv.notify()
-        break       
-      with self.cv:
+        break   
+     
+      try:
+        self.cv.acquire()
         self.data = json.loads(data)
-        self.cv.notify()
+        if "error" in self.data:
+          break
+        if type(self.data) is dict and self.data["result"] is not None and type(self.data["result"]) is dict and "type" in self.data["result"] and self.data["result"]["type"] == "episode":   
+      #  if type(self.data) is dict and next(iter(self.data)) == "result" and "type" in self.data["result"] and self.data["result"]["type"] == "episode":   
+          self.cv.release()
+          self.cv_released_already = True  
+          try:
+            self.episode_cv.acquire()
+            self.episode_cv.notify()
+          finally:
+            self.episode_status = self.episode_tick() 
+            self.episode_cv.release()          
+        else:
+           self.cv.notify()
+           self.cv_released_already = False            
+      finally:
+        if(self.cv_released_already == False):
+          self.cv.release()
 
+      
     await self.websocket.close()
 
   def command(self, name, args = {}):
     if not self.websocket:
       raise Exception("Not connected")
-     
     data = json.dumps({"command": name, "arguments": args})
     asyncio.run_coroutine_threadsafe(self.websocket.send(data), self.loop)
-
     with self.cv:
       self.cv.wait_for(lambda: self.data is not None)
       data = self.data
       self.data = None
+    if "error" in data:
+      raise Exception(data["error"])
+    return data["result"] 
+
+  def episode_tick(self):
+    if not self.websocket:
+      raise Exception("Not connected")
+  #  with self.episode_cv:
+    self.episode_cv.acquire()
+    try:
+      self.episode_cv.wait_for(lambda: self.data is not None)
+      data = self.data 
+      self.data = None
+    finally:
+      self.episode_cv.release()
 
     if "error" in data:
       raise Exception(data["error"])

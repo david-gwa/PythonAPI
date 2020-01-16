@@ -1,0 +1,9 @@
+2019-09-25 08:31:20,834 - __main__ - INFO - scenario: NpcCutOff episode index: 0
+2019-09-25 08:31:20,836 - __main__ - ERROR - this scenario can't load successfully
+2019-09-25 08:31:20,837 - __main__ - ERROR - [Errno 2] No such file or directory: 'scenario/ego_positions.txt'
+2019-09-25 09:48:23,180 - __main__ - INFO - scenario: NpcCutOff episode index: 0
+2019-09-25 09:48:23,183 - __main__ - ERROR - this scenario can't load successfully
+2019-09-25 09:48:23,184 - __main__ - ERROR - [Errno 2] No such file or directory: 'scenario/ego_positions.txt'
+2019-09-25 10:35:59,933 - __main__ - INFO - scenario: NpcCutOff episode index: 0
+2019-09-25 10:35:59,935 - __main__ - ERROR - this scenario can't load successfully
+2019-09-25 10:35:59,935 - __main__ - ERROR - [Errno 2] No such file or directory: 'scenario/ego_positions.txt'

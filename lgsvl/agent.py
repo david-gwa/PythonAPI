@@ -9,6 +9,7 @@ from .sensor import Sensor
 from .utils import accepts
 
 from enum import Enum
+from collections import namedtuple
 from collections.abc import Iterable, Callable
 import math
 
@@ -31,6 +32,7 @@ class AgentType(Enum):
   EGO = 1
   NPC = 2
   PEDESTRIAN = 3
+  OBSTACLE = 4
 
 
 class VehicleControl:
@@ -54,6 +56,8 @@ class NPCControl:
     self.e_stop = None            # bool
     self.turn_signal_left = None  # bool
     self.turn_signal_right = None # bool
+    self.external_acceleration = -100 # as float <99 means no ext control
+    self.target_speed=0   # together with external_acceleration to control npc acc and final spd
 
 
 class AgentState:
@@ -150,6 +154,8 @@ class Agent:
       return NpcVehicle(uid, simulator)
     elif agent_type == AgentType.PEDESTRIAN:
       return Pedestrian(uid, simulator)
+    elif agent_type == AgentType.OBSTACLE:
+      return Obstacle(uid, simulator)
     else:
       raise ValueError("unsupported agent type")
 
@@ -276,6 +282,11 @@ class NpcVehicle(Vehicle):
     if control.turn_signal_left is not None or control.turn_signal_right is not None:
       args["control"]["isLeftTurnSignal"] = control.turn_signal_left
       args["control"]["isRightTurnSignal"] = control.turn_signal_right
+    if control.external_acceleration is not None:
+      args["control"]["ext_acc"] = control.external_acceleration
+    if control.target_speed is not None:
+      args["control"]["target_speed"] = control.target_speed
+
     self.remote.command("vehicle/apply_npc_control", args)
 
   def on_waypoint_reached(self, fn):
@@ -290,6 +301,10 @@ class NpcVehicle(Vehicle):
     self.remote.command("agent/on_lane_change", {"uid": self.uid})
     self.simulator._add_callback(self, "lane_change", fn)
 
+  def on_lane_change_done(self, fn):
+    self.remote.command("agent/on_lane_change_done", {"uid": self.uid})
+    self.simulator._add_callback(self, "lane_change_done", fn)
+  
 
 class Pedestrian(Agent):
   def __init__(self, uid, simulator):
@@ -335,3 +350,9 @@ class Pedestrian(Agent):
   def on_waypoint_reached(self, fn):
     self.remote.command("agent/on_waypoint_reached", {"uid": self.uid})
     self.simulator._add_callback(self, "waypoint_reached", fn)
+
+class Obstacle(Agent):
+  def __init__(self, uid, simulator):
+    super().__init__(uid, simulator)
+
+  
